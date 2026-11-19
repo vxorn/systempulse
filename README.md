@@ -8,7 +8,7 @@ SystemPulse registra una cronologia locale per ricostruire un rallentamento dopo
 
 1. Scarica `SystemPulse-Setup-Windows-x64.exe` dalle [Releases di GitHub](https://github.com/vxorn/systempulse/releases/latest), esegui l’installer e apri **SystemPulse** dal menu Start.
 2. Premi **Avvia raccolta**. Per acquisire i campioni precedenti a un rallentamento, lascia aperta l’app mentre lavori.
-3. Appena noti un rallentamento, premi **Segna rallentamento**. La timeline passa all’episodio e si aggiorna con i campioni successivi. Seleziona un campione per vedere i processi osservati. In **Cronologia** puoi tornare agli altri episodi.
+3. Appena noti un rallentamento, premi **Segna rallentamento**. La timeline passa all’episodio e si aggiorna con i campioni successivi. Seleziona un punto nei grafici o una riga della tabella per vedere i processi osservati in quel campione. In **Cronologia** puoi tornare agli altri episodi.
 
 L’app si installa per l’utente corrente su Windows x64 e non richiede un’installazione separata di Python. L’installer è privo di firma digitale. La raccolta termina alla chiusura dell’app. La disinstallazione rimuove l’app e il collegamento dal menu Start. Lo storico resta in `%LOCALAPPDATA%\SystemPulse`.
 

@@ -6,21 +6,22 @@ from queue import Empty, SimpleQueue
 import sqlite3
 from threading import Event, Thread
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import font as tkfont, messagebox, ttk
 
 from .capture import record
 from .collector import utc_now_ms
 from .storage import Store, default_db
 
 WINDOW_SECONDS = 30
-BG = "#121922"
-PANEL = "#1b2633"
-TEXT = "#edf3f8"
-MUTED = "#a9b9c9"
-GRID = "#334556"
-CPU = "#74d9ca"
-RAM = "#c4b3fa"
-MARKER = "#ffc074"
+BG = "#10151c"
+PANEL = "#161e28"
+PLOT = "#111922"
+TEXT = "#f2f6fb"
+MUTED = "#a0b0c2"
+GRID = "#283747"
+CPU = "#60e2c1"
+RAM = "#adbcff"
+MARKER = "#ffc27c"
 MIB = 2**20
 
 
@@ -30,55 +31,91 @@ def local_time(timestamp: int, include_date: bool = False) -> str:
 
 
 class TimelineChart(tk.Canvas):
-    def __init__(self, parent):
-        super().__init__(parent, height=185, background=PANEL, highlightthickness=0)
+    def __init__(self, parent, family, select_sample):
+        super().__init__(parent, height=246, background=PANEL, highlightthickness=0, takefocus=False)
+        self.font = (family, 9)
         self.samples = []
         self.anchor = 0
         self.marker = False
+        self.selected = None
+        self.sample_positions = []
         self.bind("<Configure>", lambda _: self.redraw())
+        self.bind("<Button-1>", lambda event: self._pick(event.x, select_sample))
 
     def set_data(self, samples, anchor: int, marker: bool) -> None:
         self.samples, self.anchor, self.marker = samples, anchor, marker
         self.redraw()
 
+    def select(self, key: str | None) -> None:
+        if key != self.selected:
+            self.selected = key
+            self.redraw()
+
+    def _pick(self, x: int, select_sample) -> None:
+        if self.sample_positions:
+            nearest, key = min(self.sample_positions, key=lambda position: abs(position[0] - x))
+            if abs(nearest - x) <= 16:
+                select_sample(key)
+
+    def _text(self, x, y, text, *, fill=MUTED, anchor="center") -> None:
+        self.create_text(x, y, text=text, fill=fill, anchor=anchor, font=self.font)
+
     def redraw(self) -> None:
         self.delete("all")
+        self.sample_positions = []
         width, height = self.winfo_width(), self.winfo_height()
-        if width < 110 or height < 55:
+        if width < 170 or height < 155:
             return
-        left, right, top, bottom = 44, width - 20, 13, height - 29
-        for value in (0, 50, 100):
-            y = bottom - (bottom - top) * value / 100
-            self.create_line(left, y, right, y, fill=GRID)
-            self.create_text(left - 7, y, text=f"{value}%", fill=MUTED, anchor="e")
-        self.create_text(left, height - 13, text=f"−{WINDOW_SECONDS} s", fill=MUTED, anchor="w")
-        end = f"+{WINDOW_SECONDS} s" if self.marker else "Adesso"
-        self.create_text(right, height - 13, text=end, fill=MUTED, anchor="e")
+        left, right = 63, width - 21
+        top, bottom = 36, height - 32
+        gap = 24
+        track = (bottom - top - gap) / 2
+        center = (left + right) / 2
+        lanes = [(top, top + track, CPU, "CPU"), (bottom - track, bottom, RAM, "Memoria")]
+        for first, last, color, name in lanes:
+            self.create_rectangle(left, first, right, last, fill=PLOT, outline="")
+            if self.marker:
+                self.create_rectangle(center, first, right, last, fill="#18212d", outline="")
+            self._text(left, first - 10, name, fill=color, anchor="w")
+            for value in (0, 50, 100):
+                y = last - (last - first) * value / 100
+                self.create_line(left, y, right, y, fill=GRID)
+                if value != 50:
+                    self._text(left - 10, y, f"{value}%", anchor="e")
+        self._text(left, height - 13, f"-{WINDOW_SECONDS} s", anchor="w")
+        self._text(right, height - 13, f"+{WINDOW_SECONDS} s" if self.marker else "Adesso", anchor="e")
         if self.marker:
-            center = (left + right) / 2
-            self.create_line(center, top, center, bottom, fill=MARKER, dash=(4, 3))
-            self.create_text(center, height - 13, text="Rallentamento", fill=MARKER)
+            self._text(center, 13, "Rallentamento", fill=MARKER)
+            self.create_line(center, 24, center, bottom, fill=MARKER, dash=(3, 4))
+
         if not self.samples:
-            self.create_text((left + right) / 2, (top + bottom) / 2,
-                             text="Nessun campione in questa finestra", fill=TEXT)
+            self._text(center, top + track / 2, "Nessun campione nella finestra", fill=TEXT)
             return
 
-        previous_timestamp = None
-        previous_points = None
         start = self.anchor - WINDOW_SECONDS * 1000
         duration = WINDOW_SECONDS * 1000 * (2 if self.marker else 1)
+        selected_x = None
+        previous_timestamp = None
+        previous_points = None
         for row in self.samples:
             timestamp = row["timestamp_ms"]
+            key = str(row["id"])
             x = left + (right - left) * (timestamp - start) / duration
-            percentages = (row["cpu_percent"],
-                           100 * row["memory_used_bytes"] / row["memory_total_bytes"])
-            points = [(x, bottom - (bottom - top) * value / 100) for value in percentages]
-            for index, (point, color) in enumerate(zip(points, (CPU, RAM))):
-                x, y = point
+            self.sample_positions.append((x, key))
+            if key == self.selected:
+                selected_x = x
+            values = (row["cpu_percent"], 100 * row["memory_used_bytes"] / row["memory_total_bytes"])
+            points = []
+            for index, ((first, last, color, _), value) in enumerate(zip(lanes, values)):
+                y = last - (last - first) * value / 100
+                points.append((x, y))
                 if previous_timestamp is not None and 0 < timestamp - previous_timestamp <= 3000:
                     self.create_line(*previous_points[index], x, y, fill=color, width=2)
-                self.create_oval(x - 2, y - 2, x + 2, y + 2, fill=color, outline="")
+                size = 4 if key == self.selected else 2
+                self.create_oval(x - size, y - size, x + size, y + size, fill=color, outline="")
             previous_timestamp, previous_points = timestamp, points
+        if selected_x is not None:
+            self.create_line(selected_x, top, selected_x, bottom, fill=TEXT, dash=(2, 6))
 
 
 class Desktop:
@@ -94,8 +131,11 @@ class Desktop:
         self.closing = False
         self.timer = None
         root.title("SystemPulse")
-        root.geometry("1060x720")
-        root.minsize(800, 650)
+        root.geometry("1100x780")
+        root.minsize(840, 700)
+        families = set(tkfont.families(root))
+        self.family = next((name for name in ("Segoe UI", "DejaVu Sans") if name in families),
+                           tkfont.nametofont("TkDefaultFont", root).actual("family"))
         root.configure(background=BG)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self._styles()
@@ -105,90 +145,122 @@ class Desktop:
     def _styles(self) -> None:
         style = ttk.Style(self.root)
         style.theme_use("clam")
-        style.configure(".", font=("Segoe UI", 10))
+        style.configure(".", font=(self.family, 10))
         style.configure("TFrame", background=BG)
+        style.configure("Panel.TFrame", background=PANEL)
         style.configure("TLabel", background=BG, foreground=TEXT)
-        style.configure("Title.TLabel", font=("Segoe UI", 28, "bold"))
-        style.configure("Section.TLabel", font=("Segoe UI", 12, "bold"))
+        style.configure("Brand.TLabel", font=(self.family, 19, "bold"))
+        style.configure("Headline.TLabel", font=(self.family, 21, "bold"))
+        style.configure("Section.TLabel", font=(self.family, 12, "bold"),
+                        background=PANEL, foreground=TEXT)
         style.configure("Muted.TLabel", foreground=MUTED)
-        style.configure("CPU.TLabel", foreground=CPU)
-        style.configure("RAM.TLabel", foreground=RAM)
-        style.configure("TButton", padding=(12, 8), background=PANEL, foreground=TEXT)
+        style.configure("Status.TLabel", background=PANEL, foreground=MUTED, padding=(11, 6))
+        style.configure("Recording.TLabel", background="#17362f", foreground=CPU, padding=(11, 6))
+        style.configure("PanelMuted.TLabel", background=PANEL, foreground=MUTED)
+        style.configure("PanelValue.TLabel", background=PANEL, foreground=CPU,
+                        font=(self.family, 12, "bold"))
+        style.configure("TButton", padding=(14, 9), background=PANEL, foreground=TEXT,
+                        bordercolor=GRID, lightcolor=PANEL, darkcolor=PANEL, focuscolor=MUTED)
         style.map("TButton", background=[("active", GRID)], foreground=[("disabled", MUTED)])
-        style.configure("Accent.TButton", background=CPU, foreground=BG)
-        style.map("Accent.TButton", background=[("active", "#9be8dc")])
-        style.configure("Treeview", background=PANEL, fieldbackground=PANEL,
-                        foreground=TEXT, rowheight=26)
-        style.configure("Treeview.Heading", background=GRID, foreground=TEXT)
-        style.map("Treeview", background=[("selected", "#365873")], foreground=[("selected", TEXT)])
-        style.configure("TCombobox", padding=5)
+        style.configure("Accent.TButton", background=CPU, foreground=BG,
+                        bordercolor=CPU, lightcolor=CPU, darkcolor=CPU, focuscolor=BG)
+        style.map("Accent.TButton", background=[("active", "#a3efdc")])
+        style.configure("Treeview", background=PANEL, fieldbackground=PANEL, foreground=TEXT,
+                        rowheight=29, borderwidth=0, relief="flat", bordercolor=GRID,
+                        lightcolor=GRID, darkcolor=GRID, focuscolor=MUTED)
+        style.configure("Treeview.Heading", background=GRID, foreground=TEXT, padding=(8, 5),
+                        bordercolor=GRID, lightcolor=GRID, darkcolor=GRID)
+        style.map("Treeview", background=[("selected", "#274658")], foreground=[("selected", TEXT)])
+        style.configure("Vertical.TScrollbar", background=GRID, troughcolor=PANEL,
+                        bordercolor=PANEL, lightcolor=GRID, darkcolor=GRID, arrowcolor=MUTED)
+        style.configure("TCombobox", padding=6, background=GRID, arrowcolor=TEXT,
+                        bordercolor=GRID, lightcolor=GRID, darkcolor=GRID)
         style.map("TCombobox", fieldbackground=[("readonly", PANEL)],
                   foreground=[("readonly", TEXT)], selectbackground=[("readonly", PANEL)],
                   selectforeground=[("readonly", TEXT)])
+        self.root.option_add("*TCombobox*Listbox.background", PANEL)
+        self.root.option_add("*TCombobox*Listbox.foreground", TEXT)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", "#274658")
 
     def _build(self) -> None:
-        view = ttk.Frame(self.root, padding=(24, 18))
+        view = ttk.Frame(self.root, padding=(26, 18))
         view.pack(fill="both", expand=True)
         header = ttk.Frame(view)
         header.pack(fill="x")
-        ttk.Label(header, text="SystemPulse", style="Title.TLabel").pack(side="left")
-        self.status = ttk.Label(header, text="Raccolta ferma", style="Muted.TLabel")
+        symbol = tk.Canvas(header, width=36, height=36, background=BG, highlightthickness=0)
+        symbol.pack(side="left", padx=(0, 9))
+        symbol.create_oval(1, 1, 35, 35, fill="#17362f", outline="")
+        symbol.create_line(7, 19, 13, 19, 17, 11, 21, 25, 25, 17, 29, 17, fill=CPU, width=2)
+        ttk.Label(header, text="SystemPulse", style="Brand.TLabel").pack(side="left")
+        self.status = ttk.Label(header, text="Raccolta ferma", style="Status.TLabel")
         self.status.pack(side="right")
+        tk.Frame(view, height=1, background=GRID).pack(fill="x", pady=(14, 14))
 
-        controls = ttk.Frame(view)
-        controls.pack(fill="x", pady=(10, 14))
-        self.capture_button = ttk.Button(controls, text="Avvia raccolta", command=self.toggle)
-        self.capture_button.pack(side="left")
-        ttk.Button(controls, text="Segna rallentamento", style="Accent.TButton",
-                   command=self.mark).pack(side="left", padx=(8, 0))
-        self.episode = ttk.Combobox(controls, state="readonly", width=28)
+        episode_header = ttk.Frame(view)
+        episode_header.pack(fill="x")
+        self.headline = ttk.Label(episode_header, text="Andamento del PC", style="Headline.TLabel")
+        self.headline.pack(side="left")
+        self.episode = ttk.Combobox(episode_header, state="readonly", width=25)
         self.episode.pack(side="right")
         self.episode.bind("<<ComboboxSelected>>", self._choose_episode)
-        ttk.Label(controls, text="Cronologia").pack(side="right", padx=10)
+        ttk.Label(episode_header, text="Cronologia", style="Muted.TLabel").pack(side="right", padx=10)
 
-        chart_header = ttk.Frame(view)
-        chart_header.pack(fill="x")
-        ttk.Label(chart_header, text="Andamento del sistema", style="Section.TLabel").pack(side="left")
-        ttk.Label(chart_header, text="● RAM", style="RAM.TLabel").pack(side="right")
-        ttk.Label(chart_header, text="● CPU", style="CPU.TLabel").pack(side="right", padx=12)
-        self.chart = TimelineChart(view)
-        self.chart.pack(fill="x", pady=(6, 3))
-        self.summary = ttk.Label(view, style="Muted.TLabel")
-        self.summary.pack(anchor="w", pady=(0, 12))
+        controls = ttk.Frame(view)
+        controls.pack(fill="x", pady=(7, 13))
+        self.capture_button = ttk.Button(controls, text="Avvia raccolta", command=self.toggle)
+        self.capture_button.pack(side="left")
+        self.mark_button = ttk.Button(controls, text="Segna rallentamento", style="Accent.TButton",
+                                      command=self.mark)
+        self.mark_button.pack(side="left", padx=(8, 0))
+        self.summary = ttk.Label(controls, style="Muted.TLabel")
+        self.summary.pack(side="right")
+
+        chart_panel = ttk.Frame(view, padding=(12, 5, 12, 0), style="Panel.TFrame")
+        chart_panel.pack(fill="x")
+        self.chart = TimelineChart(chart_panel, self.family, self._select_sample)
+        self.chart.pack(fill="x")
 
         details = ttk.Frame(view)
-        details.pack(fill="both", expand=True)
+        details.pack(fill="both", expand=True, pady=(12, 0))
         details.columnconfigure((0, 1), weight=1, uniform="details")
         details.rowconfigure(0, weight=1)
-        samples = ttk.Frame(details)
-        samples.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        processes = ttk.Frame(details)
-        processes.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        samples = ttk.Frame(details, padding=(10, 8), style="Panel.TFrame")
+        samples.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        processes = ttk.Frame(details, padding=(10, 8), style="Panel.TFrame")
+        processes.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
         ttk.Label(samples, text="Campioni", style="Section.TLabel").pack(anchor="w")
-        self.process_title = ttk.Label(processes, text="Processi del campione", style="Section.TLabel")
-        self.process_title.pack(anchor="w")
-        self.samples = self._table(samples, [("Ora", 90), ("Offset", 74), ("CPU", 65),
-                                             ("RAM", 65), ("Intervallo", 80)])
+        self.sample_detail = ttk.Label(samples, text="Seleziona un campione", style="PanelMuted.TLabel")
+        self.sample_detail.pack(anchor="w", pady=(2, 0))
+        ttk.Label(processes, text="Processi osservati", style="Section.TLabel").pack(anchor="w")
+        self.process_title = ttk.Label(processes, text="Processi del campione", style="PanelMuted.TLabel")
+        self.process_title.pack(anchor="w", pady=(2, 0))
+        self.samples = self._table(samples, [("Ora", 86), ("Scarto", 65), ("CPU", 50),
+                                             ("RAM", 50), ("Intervallo", 75)])
         self.samples.bind("<<TreeviewSelect>>", lambda _: self._show_processes())
-        self.processes = self._table(processes, [("Processo", 130), ("PID", 60),
-                                                 ("CPU", 65), ("RAM (MiB)", 85)])
-        ttk.Label(view, text="I dati restano su questo PC. La timeline mostra misure, non la causa del rallentamento.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(12, 0))
+        self.processes = self._table(processes, [("Processo", 120), ("PID", 52),
+                                                 ("CPU", 50), ("RAM (MiB)", 75)])
+        ttk.Label(view, text="Dati salvati su questo PC  ·  Le misure aiutano a ricostruire l’episodio",
+                  style="Muted.TLabel").pack(anchor="w", pady=(9, 0))
 
     @staticmethod
     def _table(parent, columns):
-        host = ttk.Frame(parent)
-        host.pack(fill="both", expand=True, pady=(5, 0))
+        host = ttk.Frame(parent, style="Panel.TFrame")
+        host.pack(fill="both", expand=True, pady=(6, 0))
         names = [name for name, _ in columns]
-        table = ttk.Treeview(host, columns=names, show="headings", height=5, selectmode="browse")
+        table = ttk.Treeview(host, columns=names, show="headings", height=4, selectmode="browse")
         scrollbar = ttk.Scrollbar(host, orient="vertical", command=table.yview)
         table.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         table.pack(side="left", fill="both", expand=True)
         for name, width in columns:
             table.heading(name, text=name, anchor="w")
-            table.column(name, width=width, minwidth=45)
+            table.column(name, width=width, minwidth=39)
         return table
+
+    def _select_sample(self, key: str) -> None:
+        if self.samples.exists(key):
+            self.samples.selection_set(key)
+            self.samples.see(key)
 
     def toggle(self) -> None:
         if self.thread and self.thread.is_alive():
@@ -200,7 +272,7 @@ class Desktop:
         self.thread = Thread(target=self._record, name="systempulse-collector")
         self.thread.start()
         self.capture_button.configure(text="Ferma raccolta")
-        self.status.configure(text="Raccolta attiva · primo campione tra circa 2 s")
+        self.status.configure(text="◉  In attesa del primo campione", style="Recording.TLabel")
 
     def _record(self) -> None:
         try:
@@ -226,7 +298,7 @@ class Desktop:
             self.thread = None
             self.capture_button.configure(text="Avvia raccolta")
             self.capture_button.state(["!disabled"])
-            self.status.configure(text="Raccolta ferma")
+            self.status.configure(text="Raccolta ferma", style="Status.TLabel")
         try:
             error = self.errors.get_nowait()
         except Empty:
@@ -259,16 +331,17 @@ class Desktop:
         self.chart.set_data([row for row, _ in records], anchor, marker is not None)
         recent = self.thread and self.thread.is_alive() and not self.stop.is_set()
         if recent and records:
-            self.status.configure(text="Raccolta attiva")
+            self.status.configure(text="◉  Raccolta attiva", style="Recording.TLabel")
+        self.headline.configure(text=f"Episodio delle {local_time(anchor)}" if marker else "Andamento del PC")
         if marker:
             before = sum(row["timestamp_ms"] < anchor for row, _ in records)
             summary = f"{before} campioni prima · {len(records) - before} dopo il marker"
             if not records:
-                summary += " · La raccolta deve essere attiva per osservare l’episodio"
+                summary = "Nessun campione attorno all’episodio"
         elif records:
             summary = f"{len(records)} campioni · Ultimo alle {local_time(records[-1][0]['timestamp_ms'])}"
         else:
-            summary = "Avvia la raccolta per vedere CPU e memoria in tempo reale."
+            summary = "Avvia la raccolta per vedere CPU e memoria."
         self.summary.configure(text=summary)
         self._show_samples(records, anchor, marker is not None)
 
@@ -277,6 +350,7 @@ class Desktop:
         signature = (self.marker_id, tuple(row["id"] for row, _ in records))
         if signature == self.sample_signature and marker:
             return
+        switched_episode = self.sample_signature is not None and self.sample_signature[0] != self.marker_id
         follow_latest = not marker and bool(selected) and selected[0] == next(reversed(self.rows), None)
         self.sample_signature = signature
         scroll = self.samples.yview()[0]
@@ -292,7 +366,9 @@ class Desktop:
             ))
         if self.rows:
             key = next(reversed(self.rows))
-            if not follow_latest and selected and selected[0] in self.rows:
+            if switched_episode and marker:
+                key = min(self.rows, key=lambda item: abs(self.rows[item][0]["timestamp_ms"] - anchor))
+            elif not follow_latest and selected and selected[0] in self.rows:
                 key = selected[0]
             self.samples.selection_set(key)
             if key not in selected:
@@ -305,10 +381,14 @@ class Desktop:
         self.processes.delete(*self.processes.get_children())
         selected = self.samples.selection()
         if not selected or selected[0] not in self.rows:
-            self.process_title.configure(text="Processi del campione")
+            self.chart.select(None)
+            self.sample_detail.configure(text="Seleziona un campione")
+            self.process_title.configure(text="Seleziona un campione per vedere i processi")
             return
         row, processes = self.rows[selected[0]]
-        self.process_title.configure(text=f"Processi · {row['processes_measured']}/{row['processes_observed']} misurati")
+        self.chart.select(selected[0])
+        self.sample_detail.configure(text=f"Selezionato alle {local_time(row['timestamp_ms'])}")
+        self.process_title.configure(text=f"Misurati {row['processes_measured']} di {row['processes_observed']} processi · primi 5 per CPU")
         for process in processes:
             self.processes.insert("", "end", values=(
                 process["name"], process["pid"], f"{process['cpu_percent']:.1f}%",
