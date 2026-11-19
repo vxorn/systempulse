@@ -103,20 +103,28 @@ class Store:
             """, (now_ms - RETENTION_MS,)).fetchall()
 
     def timeline(
-        self, now_ms: int, marker_id: int | None, window_ms: int
+        self, now_ms: int, marker_id: int | None, window_ms: int, *, latest: bool = False
     ) -> tuple[sqlite3.Row | None, list[tuple[sqlite3.Row, list[sqlite3.Row]]]]:
         with self.connect() as db:
             db.execute("BEGIN")
             cutoff = now_ms - RETENTION_MS
             anchor = now_ms
             marker = None
-            if marker_id is not None:
+            if latest:
+                marker = db.execute("""
+                    SELECT * FROM markers WHERE timestamp_ms >= ?
+                    ORDER BY timestamp_ms DESC, id DESC LIMIT 1
+                """, (cutoff,)).fetchone()
+                if marker is None:
+                    raise ValueError("Nessun marker disponibile. Usa systempulse mark per crearne uno.")
+            elif marker_id is not None:
                 marker = db.execute(
                     "SELECT * FROM markers WHERE id = ? AND timestamp_ms >= ?",
                     (marker_id, cutoff),
                 ).fetchone()
                 if marker is None:
                     raise ValueError(f"Marker #{marker_id} assente o scaduto.")
+            if marker is not None:
                 anchor = marker["timestamp_ms"]
             start = max(cutoff, anchor - window_ms)
             end = anchor + window_ms if marker else now_ms

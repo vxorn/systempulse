@@ -40,9 +40,11 @@ def capture(store: Store) -> None:
         time.sleep(max(0, INTERVAL_SECONDS - (time.monotonic() - started)))
 
 
-def show_timeline(store: Store, marker_id: int | None, seconds: int) -> None:
+def show_timeline(
+    store: Store, marker_id: int | None, seconds: int, *, latest: bool = False
+) -> None:
     now = utc_now_ms()
-    marker, samples = store.timeline(now, marker_id, seconds * 1000)
+    marker, samples = store.timeline(now, marker_id, seconds * 1000, latest=latest)
     anchor = marker["timestamp_ms"] if marker else now
     if marker:
         print(f"Marker #{marker['id']} · {utc_label(anchor)} · {marker['label']}")
@@ -92,7 +94,9 @@ def main(argv: list[str] | None = None) -> int:
     mark.add_argument("label", nargs="?", default="Rallentamento")
     commands.add_parser("markers", help="Elenca i marker recenti")
     timeline = commands.add_parser("timeline", help="Legge la cronologia raccolta")
-    timeline.add_argument("--marker", type=int, help="ID del marker da esaminare")
+    marker_selection = timeline.add_mutually_exclusive_group()
+    marker_selection.add_argument("--marker", type=int, help="ID del marker da esaminare")
+    marker_selection.add_argument("--latest", action="store_true", help="Usa il marker più recente")
     timeline.add_argument("--seconds", type=int, default=15, metavar="N",
                           help="Da 1 a 300 secondi, per lato con un marker (default: 15)")
     args = parser.parse_args(argv)
@@ -115,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
             for row in rows:
                 print(f"#{row['id']} · {utc_label(row['timestamp_ms'])} · {row['label']}")
         else:
-            show_timeline(store, args.marker, args.seconds)
+            show_timeline(store, args.marker, args.seconds, latest=args.latest)
     except KeyboardInterrupt:
         print("\nRaccolta interrotta.")
     except (OSError, ValueError, sqlite3.Error) as error:

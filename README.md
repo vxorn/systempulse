@@ -19,13 +19,13 @@ Lascia il collector attivo. In un secondo PowerShell, dalla stessa cartella, mar
 .\.venv\Scripts\systempulse.exe markers
 ```
 
-Attendi 15 secondi per raccogliere i campioni successivi e passa a `--marker` l’ID appena restituito:
+Attendi 15 secondi per raccogliere i campioni successivi e apri l’ultimo episodio:
 
 ```powershell
-.\.venv\Scripts\systempulse.exe timeline --marker 1 --seconds 15
+.\.venv\Scripts\systempulse.exe timeline --latest
 ```
 
-Senza `--marker`, `timeline` mostra gli ultimi secondi rispetto all’ora corrente. Per usare un archivio alternativo, inserisci `--db percorso.sqlite3` prima del sottocomando in tutti i terminali. Usa un solo collector per archivio. Ferma il collector con Ctrl+C.
+Usa `timeline --marker ID` per aprire un episodio precedente. Senza `--latest` o `--marker`, `timeline` mostra gli ultimi secondi rispetto all’ora corrente. Per usare un archivio alternativo, inserisci `--db percorso.sqlite3` prima del sottocomando in tutti i terminali. Usa un solo collector per archivio. Ferma il collector con Ctrl+C.
 
 ## Architettura
 
@@ -57,3 +57,5 @@ Il database contiene nomi e PID dei processi, metriche e note dei marker. Evita 
 ```
 
 La prova d’integrazione avvia il collector reale, usa un archivio temporaneo e controlla i campioni ai due lati di un marker. Il data set di produzione nasce esclusivamente dal collector.
+
+Il workflow GitHub Actions `Windows tests` installa il pacchetto ed esegue la stessa suite su Windows con Python 3.11 e 3.14 a ogni push e pull request.

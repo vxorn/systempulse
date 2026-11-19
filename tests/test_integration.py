@@ -53,6 +53,10 @@ class CaptureIntegrationTest(unittest.TestCase):
                     self.assertRegex(timeline, r"(?m)^ *-\d+\.\d+s")
                     self.assertRegex(timeline, r"(?m)^ *\+\d+\.\d+s")
                     self.assertIn("#1", cli("markers"))
+                    self.assertIn("Marker #1", cli("timeline", "--latest"))
+                    self.assertIn("Marker #2", cli("mark", "Secondo episodio"))
+                    self.assertIn("Secondo episodio", cli("timeline", "--latest"))
+                    self.assertIn("Test locale", cli("timeline", "--marker", "1"))
                     with closing(sqlite3.connect(db_path)) as db:
                         rows = db.execute("""
                             SELECT cpu_percent, memory_used_bytes, memory_total_bytes, interval_seconds

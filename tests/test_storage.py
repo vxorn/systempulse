@@ -62,6 +62,15 @@ class StoreTests(unittest.TestCase):
             self.store.save(sample(self.now))
         self.assertEqual(self.store.timeline(self.now, None, 1000)[1], [])
 
+    def test_latest_marker_skips_expired_rows_and_breaks_timestamp_ties(self):
+        self.store.mark(self.now - RETENTION_MS - 1, "expired")
+        with self.assertRaisesRegex(ValueError, "Nessun marker"):
+            self.store.timeline(self.now, None, 1000, latest=True)
+        self.store.mark(self.now, "first")
+        newest = self.store.mark(self.now, "second")
+        marker, _ = self.store.timeline(self.now, None, 1000, latest=True)
+        self.assertEqual(marker["id"], newest)
+
     def test_invalid_marker_labels_are_rejected(self):
         for label in (" ", "bad\nlabel", "a" * 121):
             with self.subTest(label=label), self.assertRaises(ValueError):
