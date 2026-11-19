@@ -2,6 +2,7 @@
 
 from contextlib import closing, contextmanager
 from collections.abc import Iterator
+import os
 from pathlib import Path
 import sqlite3
 
@@ -40,6 +41,13 @@ CREATE TABLE IF NOT EXISTS markers (
 );
 CREATE INDEX IF NOT EXISTS markers_time ON markers(timestamp_ms);
 """
+
+
+def default_db() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA") if os.name == "nt" else None
+    if local_app_data:
+        return Path(local_app_data) / "SystemPulse" / "timeline.sqlite3"
+    return Path.home() / ".systempulse" / "timeline.sqlite3"
 
 
 class Store:

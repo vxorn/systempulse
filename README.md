@@ -1,10 +1,18 @@
 # SystemPulse
 
-SystemPulse registra una cronologia locale per ricostruire un rallentamento dopo che è avvenuto. Il primo milestone offre un collector in primo piano, un marker manuale e una vista da terminale centrata sull’evento.
+SystemPulse registra una cronologia locale per ricostruire un rallentamento dopo che è avvenuto. L’app desktop mostra CPU, memoria e processi attorno a un episodio segnato dall’utente. È disponibile anche un comando da terminale.
 
 ## Avvio su Windows
 
-### Pacchetto portatile
+### App desktop
+
+1. Scarica `SystemPulse-Setup-Windows-x64.exe` dalle [Releases di GitHub](https://github.com/vxorn/systempulse/releases/latest), esegui l’installer e apri **SystemPulse** dal menu Start.
+2. Premi **Avvia raccolta**. Per acquisire i campioni precedenti a un rallentamento, lascia aperta l’app mentre lavori.
+3. Appena noti un rallentamento, premi **Segna rallentamento**. La timeline passa all’episodio e si aggiorna con i campioni successivi. Seleziona un campione per vedere i processi osservati. In **Cronologia** puoi tornare agli altri episodi.
+
+L’app si installa per l’utente corrente su Windows x64 e non richiede un’installazione separata di Python. L’installer è privo di firma digitale. La raccolta termina alla chiusura dell’app. La disinstallazione rimuove l’app e il collegamento dal menu Start. Lo storico resta in `%LOCALAPPDATA%\SystemPulse`.
+
+### Pacchetto portatile da terminale
 
 Scarica `SystemPulse-Windows-x64.zip` dalle [Releases di GitHub](https://github.com/vxorn/systempulse/releases/latest) ed estrai l’intera cartella. Il pacchetto include già Python e le dipendenze. Da PowerShell, dentro la cartella estratta:
 
@@ -44,7 +52,7 @@ Attendi 15 secondi per raccogliere i campioni successivi e apri l’ultimo episo
 .\.venv\Scripts\systempulse.exe timeline --latest
 ```
 
-Usa `timeline --marker ID` per aprire un episodio precedente. Senza `--latest` o `--marker`, `timeline` mostra gli ultimi secondi rispetto all’ora corrente. Per usare un archivio alternativo, inserisci `--db percorso.sqlite3` prima del sottocomando in tutti i terminali. Usa un solo collector per archivio. Ferma il collector con Ctrl+C.
+Usa `timeline --marker ID` per aprire un episodio precedente. Senza `--latest` o `--marker`, `timeline` mostra gli ultimi secondi rispetto all’ora corrente. Per usare un archivio alternativo, inserisci `--db percorso.sqlite3` prima del sottocomando in tutti i terminali. Usa un solo collector per archivio, anche quando usi sia l’app desktop sia il terminale. Ferma il collector con Ctrl+C.
 
 ## Architettura
 
@@ -69,6 +77,8 @@ L’archivio predefinito è `%LOCALAPPDATA%\SystemPulse\timeline.sqlite3` su Win
 
 Il database contiene nomi e PID dei processi, metriche e note dei marker. Evita dati sensibili nelle note. Il programma opera in locale e non invia telemetria.
 
+Per avviare l’app dai sorgenti dopo l’installazione Python, esegui `.\.venv\Scripts\systempulse-desktop.exe`.
+
 ## Test
 
 ```powershell
@@ -77,4 +87,4 @@ Il database contiene nomi e PID dei processi, metriche e note dei marker. Evita 
 
 La prova d’integrazione avvia il collector reale, usa un archivio temporaneo e controlla i campioni ai due lati di un marker. Il data set di produzione nasce esclusivamente dal collector.
 
-Il workflow GitHub Actions `Windows tests` installa il pacchetto ed esegue la stessa suite su Windows con Python 3.11 e 3.14 a ogni push su `main` e a ogni pull request. Compila anche lo ZIP portatile e verifica la raccolta usando l’eseguibile estratto.
+Il workflow GitHub Actions `Windows tests` installa il pacchetto ed esegue la stessa suite su Windows con Python 3.11 e 3.14 a ogni push su `main` e a ogni pull request. Compila anche lo ZIP portatile e verifica la raccolta dall’eseguibile estratto. Un job separato installa, avvia e disinstalla l’app desktop.
