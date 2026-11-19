@@ -44,10 +44,12 @@ class DesktopTest(unittest.TestCase):
                 self.assertTrue(app.processes.get_children())
                 self.assertIn("Rallentamento alle", app.headline.cget("text"))
                 x, key = app.chart.sample_positions[-1]
+                app.details.select(1)
                 app.chart.event_generate("<Button-1>", x=round(x), y=55)
                 root.update()
                 self.assertEqual(app.samples.selection(), (key,))
                 self.assertEqual(app.chart.selected, key)
+                self.assertEqual(app.details.index(app.details.select()), 0)
                 app.episode.current(0)
                 app.episode.event_generate("<<ComboboxSelected>>")
                 root.update()

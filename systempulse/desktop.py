@@ -162,8 +162,12 @@ class Desktop:
         style.configure("Status.TLabel", background=PANEL, foreground=MUTED, padding=(11, 6))
         style.configure("Recording.TLabel", background="#17362f", foreground=CPU, padding=(11, 6))
         style.configure("PanelMuted.TLabel", background=PANEL, foreground=MUTED)
-        style.configure("PanelValue.TLabel", background=PANEL, foreground=CPU,
-                        font=(self.family, 12, "bold"))
+        style.configure("Summary.TLabel", font=(self.family, 12, "bold"))
+        style.configure("TNotebook", background=BG, borderwidth=0)
+        style.configure("TNotebook.Tab", background=BG, foreground=MUTED, padding=(16, 8),
+                        bordercolor=BG, lightcolor=BG, darkcolor=BG)
+        style.map("TNotebook.Tab", background=[("selected", PANEL)],
+                  foreground=[("selected", TEXT)])
         style.configure("TButton", padding=(14, 9), background=PANEL, foreground=TEXT,
                         bordercolor=GRID, lightcolor=PANEL, darkcolor=PANEL, focuscolor=MUTED)
         style.map("TButton", background=[("active", GRID)], foreground=[("disabled", MUTED)])
@@ -217,7 +221,7 @@ class Desktop:
         self.mark_button = ttk.Button(controls, text="Segna rallentamento", style="Accent.TButton",
                                       command=self.mark)
         self.mark_button.pack(side="left", padx=(8, 0))
-        self.summary = ttk.Label(controls, style="Muted.TLabel")
+        self.summary = ttk.Label(controls, style="Summary.TLabel")
         self.summary.pack(side="right")
         self.hint = ttk.Label(view, text="Quando il PC rallenta, premi Segna rallentamento.",
                               style="Muted.TLabel")
@@ -228,18 +232,18 @@ class Desktop:
         self.chart = TimelineChart(chart_panel, self.family, self._select_sample)
         self.chart.pack(fill="x")
 
-        details = ttk.Frame(view)
-        details.pack(fill="both", expand=True, pady=(12, 0))
-        details.columnconfigure((0, 1), weight=1, uniform="details")
-        details.rowconfigure(0, weight=1)
-        samples = ttk.Frame(details, padding=(10, 8), style="Panel.TFrame")
-        samples.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
-        processes = ttk.Frame(details, padding=(10, 8), style="Panel.TFrame")
-        processes.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
-        ttk.Label(samples, text="Campioni", style="Section.TLabel").pack(anchor="w")
+        self.details = ttk.Notebook(view)
+        self.details.pack(fill="both", expand=True, pady=(10, 0))
+        self.details.enable_traversal()
+        self.process_page = ttk.Frame(self.details, padding=(14, 10), style="Panel.TFrame")
+        samples = ttk.Frame(self.details, padding=(14, 10), style="Panel.TFrame")
+        self.details.add(self.process_page, text="Processi")
+        self.details.add(samples, text="Letture")
+        processes = self.process_page
+        ttk.Label(samples, text="Letture del sistema", style="Section.TLabel").pack(anchor="w")
         self.sample_detail = ttk.Label(samples, text="Seleziona un campione", style="PanelMuted.TLabel")
         self.sample_detail.pack(anchor="w", pady=(2, 0))
-        ttk.Label(processes, text="Processi osservati", style="Section.TLabel").pack(anchor="w")
+        ttk.Label(processes, text="Processi al momento selezionato", style="Section.TLabel").pack(anchor="w")
         self.process_title = ttk.Label(processes, text="Processi del campione", style="PanelMuted.TLabel")
         self.process_title.pack(anchor="w", pady=(2, 0))
         self.samples = self._table(samples, [("Ora", 86), ("Dal marker", 75), ("CPU", 50),
@@ -269,6 +273,7 @@ class Desktop:
         if self.samples.exists(key):
             self.samples.selection_set(key)
             self.samples.see(key)
+            self.details.select(self.process_page)
 
     def toggle(self) -> None:
         if self.thread and self.thread.is_alive():
@@ -366,7 +371,7 @@ class Desktop:
         if marker:
             before = sum(row["timestamp_ms"] < anchor for row, _ in records)
             summary = f"{before} campioni prima · {len(records) - before} dopo il marker"
-            self.hint.configure(text="Seleziona un punto del grafico per vedere i processi attivi in quel momento.")
+            self.hint.configure(text="Clicca sul grafico per vedere quali processi erano attivi in quel momento.")
         elif records:
             latest = records[-1][0]
             ram = 100 * latest["memory_used_bytes"] / latest["memory_total_bytes"]
