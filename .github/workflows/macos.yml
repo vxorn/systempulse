@@ -17,8 +17,8 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            build-runner: macos-15
-            launch-runner: macos-26
+            build-runner: macos-26
+            launch-runner: macos-15
           - arch: x86_64
             build-runner: macos-15-intel
             launch-runner: macos-26-intel

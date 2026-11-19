@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   package:
-    name: Build and test on macOS 15
+    name: Build and test on ${{ inputs.build-runner }}
     runs-on: ${{ inputs.build-runner }}
     timeout-minutes: 15
     steps:
@@ -57,7 +57,7 @@ jobs:
           if-no-files-found: error
 
   launch:
-    name: Launch on macOS 26
+    name: Launch on ${{ inputs.launch-runner }}
     runs-on: ${{ inputs.launch-runner }}
     timeout-minutes: 15
     needs: package
