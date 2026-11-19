@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "systempulse"
-version = "0.2.1"
+version = "0.2.2"
 description = "Local incident timeline for your PC"
 requires-python = ">=3.11"
 dependencies = ["psutil>=7.2,<8"]

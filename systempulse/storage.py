@@ -51,16 +51,17 @@ def default_db() -> Path:
 
 
 class Store:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, timeout: float = 5) -> None:
         self.path = path
+        self.timeout = timeout
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         with self.connect() as db:
             db.execute("PRAGMA journal_mode = WAL")
             db.executescript(SCHEMA)
 
     @contextmanager
-    def connect(self) -> Iterator[sqlite3.Connection]:
-        with closing(sqlite3.connect(self.path, timeout=5)) as db:
+    def connect(self, *, timeout: float | None = None) -> Iterator[sqlite3.Connection]:
+        with closing(sqlite3.connect(self.path, timeout=self.timeout if timeout is None else timeout)) as db:
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA foreign_keys = ON")
             with db:
@@ -73,7 +74,7 @@ class Store:
         db.execute("DELETE FROM markers WHERE timestamp_ms < ?", (cutoff,))
 
     def save(self, sample: Sample) -> None:
-        with self.connect() as db:
+        with self.connect(timeout=5) as db:
             cursor = db.execute("""
                 INSERT INTO samples (
                     timestamp_ms, interval_seconds, cpu_percent, memory_used_bytes,
@@ -111,7 +112,8 @@ class Store:
             """, (now_ms - RETENTION_MS,)).fetchall()
 
     def timeline(
-        self, now_ms: int, marker_id: int | None, window_ms: int, *, latest: bool = False
+        self, now_ms: int, marker_id: int | None, window_ms: int, *,
+        latest: bool = False, anchor_latest_sample: bool = False,
     ) -> tuple[sqlite3.Row | None, list[tuple[sqlite3.Row, list[sqlite3.Row]]]]:
         with self.connect() as db:
             db.execute("BEGIN")
@@ -134,8 +136,15 @@ class Store:
                     raise ValueError(f"Marker #{marker_id} assente o scaduto.")
             if marker is not None:
                 anchor = marker["timestamp_ms"]
+            elif anchor_latest_sample:
+                last = db.execute(
+                    "SELECT MAX(timestamp_ms) FROM samples WHERE timestamp_ms BETWEEN ? AND ?",
+                    (cutoff, now_ms),
+                ).fetchone()[0]
+                if last is not None:
+                    anchor = last
             start = max(cutoff, anchor - window_ms)
-            end = anchor + window_ms if marker else now_ms
+            end = anchor + window_ms if marker else anchor
             rows = db.execute("""
                 SELECT * FROM samples WHERE timestamp_ms BETWEEN ? AND ?
                 ORDER BY timestamp_ms, id

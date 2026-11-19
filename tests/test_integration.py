@@ -43,6 +43,11 @@ class CaptureIntegrationTest(unittest.TestCase):
                         self.fail("Timed out waiting for real samples")
 
                     wait_for_sample(lambda db: db.execute("SELECT 1 FROM samples").fetchone())
+                    second = subprocess.run(
+                        [*command, "capture"], capture_output=True, encoding="utf-8", env=env, timeout=10
+                    )
+                    self.assertEqual(second.returncode, 1)
+                    self.assertIn("già attiva", second.stderr)
                     self.assertIn("Marker #1", cli("mark", "Test locale"))
                     wait_for_sample(lambda db: db.execute("""
                         SELECT 1 FROM samples, markers
