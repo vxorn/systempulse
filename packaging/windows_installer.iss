@@ -27,12 +27,21 @@ WizardStyle=modern
 Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+italian.StartWithWindows=Avvia SystemPulse quando accedo a Windows
+english.StartWithWindows=Start SystemPulse when I sign in to Windows
+
+[Tasks]
+Name: "autostart"; Description: "{cm:StartWithWindows}"
+
 [Files]
 Source: "..\dist\SystemPulseDesktop\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\SystemPulse"; Filename: "{app}\SystemPulse.exe"; WorkingDir: "{app}"
+
+Name: "{userstartup}\SystemPulse"; Filename: "{app}\SystemPulse.exe"; WorkingDir: "{app}"; Tasks: autostart
 
 [Run]
 Filename: "{app}\SystemPulse.exe"; Description: "SystemPulse"; Flags: nowait postinstall skipifsilent

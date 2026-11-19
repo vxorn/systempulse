@@ -7,10 +7,10 @@ SystemPulse registra una cronologia locale per ricostruire un rallentamento dopo
 ### App desktop
 
 1. Scarica `SystemPulse-Setup-Windows-x64.exe` dalle [Releases di GitHub](https://github.com/vxorn/systempulse/releases/latest), esegui l’installer e apri **SystemPulse** dal menu Start.
-2. Premi **Avvia raccolta**. Per acquisire i campioni precedenti a un rallentamento, lascia aperta l’app mentre lavori.
+2. La raccolta parte appena apri l’app. Per acquisire i campioni precedenti a un rallentamento, lascia aperta l’app mentre lavori.
 3. Appena noti un rallentamento, premi **Segna rallentamento**. La timeline passa all’episodio e si aggiorna con i campioni successivi. Seleziona un punto nei grafici o una riga della tabella per vedere i processi osservati in quel campione. In **Cronologia** puoi tornare agli altri episodi.
 
-L’app si installa per l’utente corrente su Windows x64 e non richiede un’installazione separata di Python. L’installer è privo di firma digitale. La raccolta termina alla chiusura dell’app. La disinstallazione rimuove l’app e il collegamento dal menu Start. Lo storico resta in `%LOCALAPPDATA%\SystemPulse`.
+Durante l’installazione puoi scegliere se avviare SystemPulse quando accedi a Windows. L’app si installa per l’utente corrente su Windows x64 e non richiede un’installazione separata di Python. L’installer è privo di firma digitale. La raccolta termina alla chiusura dell’app. La disinstallazione rimuove l’app e il collegamento dal menu Start. Lo storico resta in `%LOCALAPPDATA%\SystemPulse`.
 
 ### Pacchetto portatile da terminale
 
@@ -68,7 +68,7 @@ Usa `timeline --marker ID` per aprire un episodio precedente. Senza `--latest` o
 ## Come leggere i dati
 
 - La frequenza obiettivo è un campione ogni 2 secondi. Il primo passaggio stabilisce la baseline della CPU. La colonna intervallo indica il tempo monotono effettivo tra le letture della CPU. Un distacco superiore a 3 secondi tra timestamp è segnalato in vista. Timestamp e offset risentono delle correzioni dell’orologio di sistema.
-- La CPU di sistema è mediata sull’intervallo. La RAM mostrata è il totale meno quella disponibile. Per processo, il 100% equivale all’uso pieno di un core logico durante l’intervallo. RSS è la memoria residente, che può includere pagine condivise. Il collector scansiona i processi e conserva al massimo i 5 con maggiore CPU osservata, usando l’RSS per sciogliere le parità. Processi nuovi, terminati o inaccessibili possono mancare dalla classifica. La copertura mostra quanti processi enumerati avevano una misura utilizzabile.
+- La CPU di sistema è mediata sull’intervallo. La RAM mostrata è il totale meno quella disponibile. Per processo, il 100% equivale all’uso pieno di un core logico durante l’intervallo. RSS è la memoria residente, che può includere pagine condivise. Il collector scansiona i processi e conserva al massimo i 5 con maggiore CPU osservata, usando il PID per sciogliere le parità. Processi nuovi, terminati o inaccessibili possono mancare dalla classifica. La copertura mostra quanti processi enumerati avevano una misura CPU utilizzabile. Nome e memoria residente vengono letti solo per i processi in testa alla classifica.
 - Un marker registra l’ora del comando e usa lo storico già raccolto. I marker seguono la stessa conservazione dei campioni. Un picco più breve dell’intervallo può essere attenuato o sfuggire. Il costo della scansione dipende dal numero di processi e va misurato su Windows.
 
 ## Archivio e privacy

@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $install = Join-Path $env:RUNNER_TEMP 'SystemPulse Install Test'
 $log = Join-Path $env:RUNNER_TEMP 'systempulse-setup.log'
-$arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$install`" /LOG=`"$log`""
+$arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS=autostart /DIR=`"$install`" /LOG=`"$log`""
 $setup = Start-Process 'installer/SystemPulse-Setup-Windows-x64.exe' -ArgumentList $arguments -Wait -PassThru
 if ($setup.ExitCode -ne 0) {
     Get-Content $log
@@ -26,8 +26,10 @@ try {
 
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'SystemPulse.lnk'
 if (-not (Test-Path $shortcut)) { throw 'Start menu shortcut missing' }
+$startup = Join-Path ([Environment]::GetFolderPath('Startup')) 'SystemPulse.lnk'
+if (-not (Test-Path $startup)) { throw 'Startup shortcut missing' }
 $uninstaller = Get-ChildItem $install -Filter 'unins*.exe' | Select-Object -First 1
 $uninstall = Start-Process $uninstaller.FullName -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait -PassThru
-if ($uninstall.ExitCode -ne 0 -or (Test-Path (Join-Path $install 'SystemPulse.exe')) -or (Test-Path $shortcut)) {
+if ($uninstall.ExitCode -ne 0 -or (Test-Path (Join-Path $install 'SystemPulse.exe')) -or (Test-Path $shortcut) -or (Test-Path $startup)) {
     throw 'SystemPulse was not fully uninstalled'
 }

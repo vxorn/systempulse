@@ -64,7 +64,7 @@ class Collector:
             return None
 
         readings = {}
-        ranked = []
+        candidates: list[tuple[float, psutil.Process]] = []
         for process in processes:
             try:
                 with process.oneshot():
@@ -81,10 +81,7 @@ class Collector:
                     delta = reading.cpu_seconds - last.cpu_seconds
                     if elapsed <= 0 or delta < 0:
                         continue
-                    ranked.append(ProcessUsage(
-                        process.pid, process.name(), 100 * delta / elapsed,
-                        process.memory_info().rss,
-                    ))
+                    candidates.append((100 * delta / elapsed, process))
             except (psutil.Error, OSError):
                 # A process may exit or deny access between reads.
                 continue
@@ -93,9 +90,20 @@ class Collector:
         if previous_time is None or now <= previous_time:
             return None
 
-        ranked.sort(key=lambda item: (-item.cpu_percent, -item.rss_bytes, item.pid))
+        candidates.sort(key=lambda item: (-item[0], item[1].pid))
+        ranked = []
+        for percent, process in candidates:
+            try:
+                with process.oneshot():
+                    ranked.append(ProcessUsage(
+                        process.pid, process.name(), percent, process.memory_info().rss,
+                    ))
+            except (psutil.Error, OSError):
+                continue
+            if len(ranked) == TOP_PROCESSES:
+                break
         return Sample(
             timestamp_ms, now - previous_time, cpu,
             memory.total - memory.available, memory.total,
-            tuple(ranked[:TOP_PROCESSES]), len(ranked), len(processes),
+            tuple(ranked), len(candidates), len(processes),
         )
