@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "systempulse"
+version = "0.1.0"
+description = "Local incident timeline for your PC"
+requires-python = ">=3.11"
+dependencies = ["psutil>=7.2,<8"]
+
+[project.scripts]
+systempulse = "systempulse.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["systempulse*"]
