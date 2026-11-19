@@ -14,7 +14,9 @@ class CaptureIntegrationTest(unittest.TestCase):
         root = Path(self.enterContext(TemporaryDirectory()))
         db_path = root / "capture.sqlite3"
         env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-        command = [sys.executable, "-m", "systempulse.cli", "--db", str(db_path)]
+        executable = os.environ.get("SYSTEMPULSE_TEST_EXECUTABLE")
+        entry_point = [executable] if executable else [sys.executable, "-m", "systempulse.cli"]
+        command = [*entry_point, "--db", str(db_path)]
 
         def cli(*args):
             return subprocess.run(
@@ -54,8 +56,8 @@ class CaptureIntegrationTest(unittest.TestCase):
                     self.assertRegex(timeline, r"(?m)^ *\+\d+\.\d+s")
                     self.assertIn("#1", cli("markers"))
                     self.assertIn("Marker #1", cli("timeline", "--latest"))
-                    self.assertIn("Marker #2", cli("mark", "Secondo episodio"))
-                    self.assertIn("Secondo episodio", cli("timeline", "--latest"))
+                    self.assertIn("Marker #2", cli("mark", "Avvio più lento"))
+                    self.assertIn("Avvio più lento", cli("timeline", "--latest"))
                     self.assertIn("Test locale", cli("timeline", "--marker", "1"))
                     with closing(sqlite3.connect(db_path)) as db:
                         rows = db.execute("""
