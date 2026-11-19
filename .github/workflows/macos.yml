@@ -1,0 +1,29 @@
+name: macOS compatibility
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    name: ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            build-runner: macos-26
+            launch-runner: macos-15
+          - arch: x86_64
+            build-runner: macos-15-intel
+            launch-runner: macos-26-intel
+    uses: ./.github/workflows/macos-package.yml
+    with:
+      arch: ${{ matrix.arch }}
+      build-runner: ${{ matrix.build-runner }}
+      launch-runner: ${{ matrix.launch-runner }}

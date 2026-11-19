@@ -1,4 +1,4 @@
-import os
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import time
@@ -15,7 +15,7 @@ class DesktopTest(unittest.TestCase):
         try:
             root = tk.Tk()
         except tk.TclError as error:
-            if os.name == "nt":
+            if sys.platform in {"darwin", "win32"}:
                 raise
             self.skipTest(f"Display unavailable: {error}")
         with TemporaryDirectory() as directory:
