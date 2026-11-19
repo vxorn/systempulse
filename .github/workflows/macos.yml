@@ -10,72 +10,20 @@ permissions:
   contents: read
 
 jobs:
-  package:
-    name: "Build and test macOS 15 / ${{ matrix.arch }}"
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+  mac:
+    name: ${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x86_64
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-      - name: Install and test
-        run: |
-          python -m pip install . 'pyinstaller>=6.12,<7'
-          python -m unittest discover -s tests -v
-      - name: Bundle the desktop app and create a disk image
-        env:
-          PACKAGE_ARCH: ${{ matrix.arch }}
-        run: |
-          version=$(python -c 'from importlib.metadata import version; print(version("systempulse"))')
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name SystemPulse \
-            --osx-bundle-identifier com.vxorn.systempulse --target-arch "$PACKAGE_ARCH" packaging/desktop_entry.py
-          bundle=dist/SystemPulse.app
-          plist="$bundle/Contents/Info.plist"
-          for key in CFBundleShortVersionString CFBundleVersion; do
-            /usr/libexec/PlistBuddy -c "Set :$key $version" "$plist" ||
-              /usr/libexec/PlistBuddy -c "Add :$key string $version" "$plist"
-          done
-          codesign --force --sign - "$bundle"
-          mkdir -p package
-          mv "$bundle" package/
-          ln -s /Applications package/Applications
-          cp LICENSE package/
-          hdiutil create -volname SystemPulse -srcfolder package -format UDZO "dist/SystemPulse-macOS-$PACKAGE_ARCH.dmg"
-          bash packaging/test_macos_app.sh "dist/SystemPulse-macOS-$PACKAGE_ARCH.dmg"
-      - uses: actions/upload-artifact@v6
-        with:
-          name: SystemPulse-macOS-${{ matrix.arch }}
-          path: dist/SystemPulse-macOS-${{ matrix.arch }}.dmg
-          if-no-files-found: error
-
-  launch:
-    name: "Launch on macOS 26 / ${{ matrix.arch }}"
-    needs: package
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-26
-            arch: arm64
-          - runner: macos-26-intel
-            arch: x86_64
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v6
-        with:
-          name: SystemPulse-macOS-${{ matrix.arch }}
-      - name: Test the packaged app
-        env:
-          PACKAGE_ARCH: ${{ matrix.arch }}
-        run: bash packaging/test_macos_app.sh "SystemPulse-macOS-$PACKAGE_ARCH.dmg"
+          - arch: arm64
+            build-runner: macos-15
+            launch-runner: macos-26
+          - arch: x86_64
+            build-runner: macos-15-intel
+            launch-runner: macos-26-intel
+    uses: ./.github/workflows/macos-package.yml
+    with:
+      arch: ${{ matrix.arch }}
+      build-runner: ${{ matrix.build-runner }}
+      launch-runner: ${{ matrix.launch-runner }}
