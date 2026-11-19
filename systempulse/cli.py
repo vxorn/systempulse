@@ -3,23 +3,15 @@
 import argparse
 from datetime import datetime, timezone
 import logging
-import os
 from pathlib import Path
 import sqlite3
 import sys
-import time
 
-from .collector import Collector, INTERVAL_SECONDS, utc_now_ms
-from .storage import Store
+from .collector import INTERVAL_SECONDS, utc_now_ms
+from .capture import record
+from .storage import Store, default_db
 
 MIB = 1024 ** 2
-
-
-def default_db() -> Path:
-    local_app_data = os.environ.get("LOCALAPPDATA") if os.name == "nt" else None
-    if local_app_data:
-        return Path(local_app_data) / "SystemPulse" / "timeline.sqlite3"
-    return Path.home() / ".systempulse" / "timeline.sqlite3"
 
 
 def utc_label(timestamp_ms: int) -> str:
@@ -29,15 +21,9 @@ def utc_label(timestamp_ms: int) -> str:
 
 
 def capture(store: Store) -> None:
-    collector = Collector()
     print(f"Raccolta ogni {INTERVAL_SECONDS:g} s · {store.path}", flush=True)
     print("Usa un secondo terminale per il marker. Ctrl+C per terminare.", flush=True)
-    while True:
-        started = time.monotonic()
-        sample = collector.sample()
-        if sample is not None:
-            store.save(sample)
-        time.sleep(max(0, INTERVAL_SECONDS - (time.monotonic() - started)))
+    record(store)
 
 
 def show_timeline(
