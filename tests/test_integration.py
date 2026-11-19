@@ -14,7 +14,9 @@ class CaptureIntegrationTest(unittest.TestCase):
         root = Path(self.enterContext(TemporaryDirectory()))
         db_path = root / "capture.sqlite3"
         env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-        command = [sys.executable, "-m", "systempulse.cli", "--db", str(db_path)]
+        executable = os.environ.get("SYSTEMPULSE_TEST_EXECUTABLE")
+        entry_point = [executable] if executable else [sys.executable, "-m", "systempulse.cli"]
+        command = [*entry_point, "--db", str(db_path)]
 
         def cli(*args):
             return subprocess.run(

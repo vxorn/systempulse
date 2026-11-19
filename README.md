@@ -4,6 +4,25 @@ SystemPulse registra una cronologia locale per ricostruire un rallentamento dopo
 
 ## Avvio su Windows
 
+### Pacchetto portatile
+
+Scarica `SystemPulse-Windows-x64.zip` dalle [Releases di GitHub](https://github.com/vxorn/systempulse/releases/latest) ed estrai l’intera cartella. Il pacchetto include già Python e le dipendenze. Da PowerShell, dentro la cartella estratta:
+
+```powershell
+.\SystemPulse.exe capture
+```
+
+In un secondo terminale, dalla stessa cartella:
+
+```powershell
+.\SystemPulse.exe mark "Blocco durante il lavoro"
+.\SystemPulse.exe timeline --latest
+```
+
+Attendi qualche secondo fra il marker e la lettura per avere campioni successivi al marker. Il pacchetto è per Windows x64 e l’eseguibile è privo di firma digitale.
+
+### Installazione dai sorgenti
+
 Installa Python 3.11 o successivo. Da PowerShell, nella radice del progetto:
 
 ```powershell
@@ -58,4 +77,4 @@ Il database contiene nomi e PID dei processi, metriche e note dei marker. Evita 
 
 La prova d’integrazione avvia il collector reale, usa un archivio temporaneo e controlla i campioni ai due lati di un marker. Il data set di produzione nasce esclusivamente dal collector.
 
-Il workflow GitHub Actions `Windows tests` installa il pacchetto ed esegue la stessa suite su Windows con Python 3.11 e 3.14 a ogni push e pull request.
+Il workflow GitHub Actions `Windows tests` installa il pacchetto ed esegue la stessa suite su Windows con Python 3.11 e 3.14 a ogni push su `main` e a ogni pull request. Compila anche lo ZIP portatile e verifica la raccolta usando l’eseguibile estratto.
