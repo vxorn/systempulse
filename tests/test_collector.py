@@ -60,3 +60,22 @@ class CollectorTests(unittest.TestCase):
                 self.assertIsNone(collector.sample())
             self.assertIsNone(collector.sample())
             self.assertEqual(collector.sample().interval_seconds, 2)
+
+    def test_expensive_fields_are_read_only_for_the_top_processes(self):
+        first = [process(pid, 1, 1) for pid in range(1, 11)]
+        second = [process(pid, 1, pid + 1) for pid in range(1, 11)]
+        with (
+            patch("systempulse.collector.psutil.cpu_percent", return_value=20),
+            patch("systempulse.collector.psutil.virtual_memory",
+                  return_value=SimpleNamespace(total=1000, available=600)),
+            patch("systempulse.collector.psutil.process_iter", side_effect=[first, second]),
+            patch("systempulse.collector.time.monotonic", side_effect=[10] * 11 + [12] * 11),
+        ):
+            collector = Collector()
+            self.assertIsNone(collector.sample())
+            sample = collector.sample()
+        self.assertEqual([item.pid for item in sample.processes], [10, 9, 8, 7, 6])
+        self.assertEqual(sample.processes_measured, 10)
+        for item in second[:5]:
+            item.name.assert_not_called()
+            item.memory_info.assert_not_called()

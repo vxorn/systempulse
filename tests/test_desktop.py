@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 import time
 import tkinter as tk
 import unittest
+from unittest.mock import patch
 
 from systempulse.desktop import Desktop
 from systempulse.storage import Store
@@ -19,7 +20,7 @@ class DesktopTest(unittest.TestCase):
             self.skipTest(f"Display unavailable: {error}")
         with TemporaryDirectory() as directory:
             store = Store(Path(directory) / "desktop.sqlite3")
-            app = Desktop(root, store)
+            app = Desktop(root, store, start_recording=True)
             root.update()
 
             def wait_for(predicate):
@@ -32,8 +33,7 @@ class DesktopTest(unittest.TestCase):
                 self.fail("Desktop state did not update before timeout")
 
             try:
-                self.assertIn("Avvia", app.capture_button.cget("text"))
-                app.capture_button.invoke()
+                self.assertIn("Ferma", app.capture_button.cget("text"))
                 wait_for(lambda: len(app.samples.get_children()) >= 1)
                 app.mark_button.invoke()
                 self.assertTrue(app.marker_id)
@@ -42,7 +42,7 @@ class DesktopTest(unittest.TestCase):
                 self.assertTrue(app.chart.marker)
                 self.assertGreater(len(app.chart.find_all()), 8)
                 self.assertTrue(app.processes.get_children())
-                self.assertIn("Episodio delle", app.headline.cget("text"))
+                self.assertIn("Rallentamento alle", app.headline.cget("text"))
                 x, key = app.chart.sample_positions[-1]
                 app.chart.event_generate("<Button-1>", x=round(x), y=55)
                 root.update()
@@ -54,6 +54,10 @@ class DesktopTest(unittest.TestCase):
                 self.assertIsNone(app.marker_id)
                 app.capture_button.invoke()
                 wait_for(lambda: app.thread is None)
+                with patch.object(app.chart, "set_data", wraps=app.chart.set_data) as update_chart:
+                    app.refresh()
+                    app.refresh()
+                    update_chart.assert_not_called()
             finally:
                 app.stop.set()
                 if app.thread:

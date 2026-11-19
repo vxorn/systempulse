@@ -4,11 +4,12 @@ from datetime import datetime
 from pathlib import Path
 from queue import Empty, SimpleQueue
 import sqlite3
+import time
 from threading import Event, Thread
 import tkinter as tk
 from tkinter import font as tkfont, messagebox, ttk
 
-from .capture import record
+from .capture import CaptureBusyError, record
 from .collector import utc_now_ms
 from .storage import Store, default_db
 
@@ -83,7 +84,7 @@ class TimelineChart(tk.Canvas):
                 if value != 50:
                     self._text(left - 10, y, f"{value}%", anchor="e")
         self._text(left, height - 13, f"-{WINDOW_SECONDS} s", anchor="w")
-        self._text(right, height - 13, f"+{WINDOW_SECONDS} s" if self.marker else "Adesso", anchor="e")
+        self._text(right, height - 13, f"+{WINDOW_SECONDS} s" if self.marker else "Ultimo campione", anchor="e")
         if self.marker:
             self._text(center, 13, "Rallentamento", fill=MARKER)
             self.create_line(center, 24, center, bottom, fill=MARKER, dash=(3, 4))
@@ -119,15 +120,17 @@ class TimelineChart(tk.Canvas):
 
 
 class Desktop:
-    def __init__(self, root: tk.Tk, store: Store) -> None:
+    def __init__(self, root: tk.Tk, store: Store, *, start_recording: bool = False) -> None:
         self.root, self.store = root, store
         self.stop = Event()
         self.thread: Thread | None = None
-        self.errors: SimpleQueue[str] = SimpleQueue()
+        self.errors: SimpleQueue[OSError | sqlite3.Error] = SimpleQueue()
         self.marker_id: int | None = None
         self.marker_ids: list[int | None] = []
         self.rows = {}
         self.sample_signature = None
+        self.rendered_selection = None
+        self.next_history_refresh = 0.0
         self.closing = False
         self.timer = None
         root.title("SystemPulse")
@@ -140,6 +143,8 @@ class Desktop:
         root.protocol("WM_DELETE_WINDOW", self.close)
         self._styles()
         self._build()
+        if start_recording:
+            self.toggle()
         self._tick()
 
     def _styles(self) -> None:
@@ -200,10 +205,10 @@ class Desktop:
         episode_header.pack(fill="x")
         self.headline = ttk.Label(episode_header, text="Andamento del PC", style="Headline.TLabel")
         self.headline.pack(side="left")
-        self.episode = ttk.Combobox(episode_header, state="readonly", width=25)
+        self.episode = ttk.Combobox(episode_header, state="readonly", width=25, postcommand=self._open_history)
         self.episode.pack(side="right")
         self.episode.bind("<<ComboboxSelected>>", self._choose_episode)
-        ttk.Label(episode_header, text="Cronologia", style="Muted.TLabel").pack(side="right", padx=10)
+        ttk.Label(episode_header, text="Episodi salvati", style="Muted.TLabel").pack(side="right", padx=10)
 
         controls = ttk.Frame(view)
         controls.pack(fill="x", pady=(7, 13))
@@ -214,6 +219,9 @@ class Desktop:
         self.mark_button.pack(side="left", padx=(8, 0))
         self.summary = ttk.Label(controls, style="Muted.TLabel")
         self.summary.pack(side="right")
+        self.hint = ttk.Label(view, text="Quando il PC rallenta, premi Segna rallentamento.",
+                              style="Muted.TLabel")
+        self.hint.pack(anchor="w", pady=(0, 8))
 
         chart_panel = ttk.Frame(view, padding=(12, 5, 12, 0), style="Panel.TFrame")
         chart_panel.pack(fill="x")
@@ -234,7 +242,7 @@ class Desktop:
         ttk.Label(processes, text="Processi osservati", style="Section.TLabel").pack(anchor="w")
         self.process_title = ttk.Label(processes, text="Processi del campione", style="PanelMuted.TLabel")
         self.process_title.pack(anchor="w", pady=(2, 0))
-        self.samples = self._table(samples, [("Ora", 86), ("Scarto", 65), ("CPU", 50),
+        self.samples = self._table(samples, [("Ora", 86), ("Dal marker", 75), ("CPU", 50),
                                              ("RAM", 50), ("Intervallo", 75)])
         self.samples.bind("<<TreeviewSelect>>", lambda _: self._show_processes())
         self.processes = self._table(processes, [("Processo", 120), ("PID", 52),
@@ -278,18 +286,18 @@ class Desktop:
         try:
             record(self.store, self.stop)
         except (OSError, sqlite3.Error) as error:
-            self.errors.put(str(error))
+            self.errors.put(error)
 
     def mark(self) -> None:
         try:
             self.marker_id = self.store.mark(utc_now_ms(), "Rallentamento")
-            self.refresh()
+            self.refresh(force_history=True)
         except (OSError, sqlite3.Error, ValueError) as error:
             messagebox.showerror("Registrazione non riuscita", str(error), parent=self.root)
 
     def _choose_episode(self, _) -> None:
         self.marker_id = self.marker_ids[self.episode.current()]
-        self.refresh()
+        self._refresh_safely()
 
     def _tick(self) -> None:
         if self.closing:
@@ -304,52 +312,74 @@ class Desktop:
         except Empty:
             pass
         else:
-            messagebox.showerror("Raccolta interrotta", error, parent=self.root)
+            if isinstance(error, CaptureBusyError):
+                self.status.configure(text="Raccolta attiva in un’altra finestra")
+            else:
+                messagebox.showerror("Raccolta interrotta", str(error), parent=self.root)
         if self.closing:
             return
+        self._refresh_safely()
+        self.timer = self.root.after(1000, self._tick)
+
+    def _refresh_safely(self) -> None:
         try:
             self.refresh()
         except (OSError, sqlite3.Error, ValueError):
-            self.summary.configure(text="Archivio temporaneamente non disponibile. Nuovo tentativo in corso.")
-        self.timer = self.root.after(1000, self._tick)
+            self.summary.configure(text="Archivio occupato. Riprovo tra poco.")
 
-    def refresh(self) -> None:
-        now = utc_now_ms()
+    def _open_history(self) -> None:
+        self.next_history_refresh = 0
+        self._refresh_safely()
+
+    def _refresh_history(self, now: int) -> None:
         markers = self.store.markers(now)
         ids = [None, *(row["id"] for row in markers)]
         if ids != self.marker_ids:
             self.marker_ids = ids
             self.episode.configure(values=[
-                "Ultimi 30 secondi",
+                "Ultima registrazione",
                 *(f"{local_time(row['timestamp_ms'], True)}  ·  #{row['id']}" for row in markers),
             ])
         if self.marker_id not in ids:
             self.marker_id = None
-        self.episode.current(ids.index(self.marker_id))
-        marker, records = self.store.timeline(now, self.marker_id, WINDOW_SECONDS * 1000)
-        anchor = marker["timestamp_ms"] if marker else now
-        self.chart.set_data([row for row, _ in records], anchor, marker is not None)
+        self.next_history_refresh = time.monotonic() + 10
+
+    def refresh(self, *, force_history: bool = False) -> None:
+        now = utc_now_ms()
+        if force_history or time.monotonic() >= self.next_history_refresh:
+            self._refresh_history(now)
+        chosen = self.marker_ids.index(self.marker_id)
+        if self.episode.current() != chosen:
+            self.episode.current(chosen)
+        marker, records = self.store.timeline(
+            now, self.marker_id, WINDOW_SECONDS * 1000, anchor_latest_sample=True
+        )
+        anchor = marker["timestamp_ms"] if marker else (records[-1][0]["timestamp_ms"] if records else now)
         recent = self.thread and self.thread.is_alive() and not self.stop.is_set()
         if recent and records:
             self.status.configure(text="◉  Raccolta attiva", style="Recording.TLabel")
-        self.headline.configure(text=f"Episodio delle {local_time(anchor)}" if marker else "Andamento del PC")
+        signature = (self.marker_id, tuple((row["id"], row["timestamp_ms"]) for row, _ in records))
+        if self.sample_signature == signature:
+            return
+        self.chart.set_data([row for row, _ in records], anchor, marker is not None)
+        self.headline.configure(text=f"Rallentamento alle {local_time(anchor)}" if marker else "Andamento del PC")
         if marker:
             before = sum(row["timestamp_ms"] < anchor for row, _ in records)
             summary = f"{before} campioni prima · {len(records) - before} dopo il marker"
-            if not records:
-                summary = "Nessun campione attorno all’episodio"
+            self.hint.configure(text="Seleziona un punto del grafico per vedere i processi attivi in quel momento.")
         elif records:
-            summary = f"{len(records)} campioni · Ultimo alle {local_time(records[-1][0]['timestamp_ms'])}"
+            latest = records[-1][0]
+            ram = 100 * latest["memory_used_bytes"] / latest["memory_total_bytes"]
+            summary = f"CPU {latest['cpu_percent']:.0f}%  ·  Memoria {ram:.0f}%  ·  {local_time(anchor)}"
+            self.hint.configure(text="Quando il PC rallenta, premi Segna rallentamento.")
         else:
-            summary = "Avvia la raccolta per vedere CPU e memoria."
+            summary = "In attesa di campioni"
+            self.hint.configure(text="Lascia SystemPulse aperto per conservare i secondi prima di un rallentamento.")
         self.summary.configure(text=summary)
-        self._show_samples(records, anchor, marker is not None)
+        self._show_samples(records, anchor, marker is not None, signature)
 
-    def _show_samples(self, records, anchor: int, marker: bool) -> None:
+    def _show_samples(self, records, anchor: int, marker: bool, signature) -> None:
         selected = self.samples.selection()
-        signature = (self.marker_id, tuple(row["id"] for row, _ in records))
-        if signature == self.sample_signature and marker:
-            return
         switched_episode = self.sample_signature is not None and self.sample_signature[0] != self.marker_id
         follow_latest = not marker and bool(selected) and selected[0] == next(reversed(self.rows), None)
         self.sample_signature = signature
@@ -357,11 +387,11 @@ class Desktop:
         self.samples.delete(*self.samples.get_children())
         self.rows = {str(row["id"]): (row, processes) for row, processes in records}
         for key, (row, _) in self.rows.items():
-            offset = (row["timestamp_ms"] - anchor) / 1000
+            offset = f"{(row['timestamp_ms'] - anchor) / 1000:+.1f} s" if marker else "—"
             interval = row["interval_seconds"]
             ram = 100 * row["memory_used_bytes"] / row["memory_total_bytes"]
             self.samples.insert("", "end", iid=key, values=(
-                local_time(row["timestamp_ms"]), f"{offset:+.1f} s", f"{row['cpu_percent']:.0f}%",
+                local_time(row["timestamp_ms"]), offset, f"{row['cpu_percent']:.0f}%",
                 f"{ram:.0f}%", f"{interval:.1f} s",
             ))
         if self.rows:
@@ -378,15 +408,20 @@ class Desktop:
         self._show_processes()
 
     def _show_processes(self) -> None:
-        self.processes.delete(*self.processes.get_children())
         selected = self.samples.selection()
-        if not selected or selected[0] not in self.rows:
+        key = selected[0] if selected and selected[0] in self.rows else None
+        signature = (key, self.rows[key][0]["timestamp_ms"]) if key else None
+        if signature == self.rendered_selection:
+            return
+        self.rendered_selection = signature
+        self.processes.delete(*self.processes.get_children())
+        if key is None:
             self.chart.select(None)
             self.sample_detail.configure(text="Seleziona un campione")
             self.process_title.configure(text="Seleziona un campione per vedere i processi")
             return
-        row, processes = self.rows[selected[0]]
-        self.chart.select(selected[0])
+        row, processes = self.rows[key]
+        self.chart.select(key)
         self.sample_detail.configure(text=f"Selezionato alle {local_time(row['timestamp_ms'])}")
         self.process_title.configure(text=f"Misurati {row['processes_measured']} di {row['processes_observed']} processi · primi 5 per CPU")
         for process in processes:
@@ -410,7 +445,7 @@ class Desktop:
 def main(path: Path | None = None) -> int:
     root = tk.Tk()
     try:
-        Desktop(root, Store(path if path else default_db()))
+        Desktop(root, Store(path if path else default_db(), timeout=0.25), start_recording=True)
     except (OSError, sqlite3.Error) as error:
         root.withdraw()
         messagebox.showerror("Impossibile aprire SystemPulse", str(error), parent=root)
